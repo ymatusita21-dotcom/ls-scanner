@@ -217,7 +217,8 @@
       if (r.unauthorized) { setSt('使えません', true); show('#dc2626', '<div class="big">このスキャナは使えません</div><div class="meta">' + esc(r.error || 'キーが作り直された可能性があります。公演ポータルから開き直してください。') + '</div>'); return; }
       const info = esc(r.name || '') + (r.name ? ' 様' : '') + '<div class="meta">' + esc((r.date || '') + ' ' + (r.time || '')) + ' / ' + esc(r.ticketType || '') + ' ' + esc(r.count || 0) + '枚' + (r.support ? ' / 推し ' + esc(r.support) : '') + '</div>';
       const seat = r.seats ? '<div class="seat">座席 ' + esc(r.seats) + '</div>' : '';
-      const gift = /最前/.test(String(r.ticketType || '')) ? '<div class="gift">🎁 特典を ' + esc(r.count || 1) + '個 お渡しください</div>' : '';
+      // 特典は公演ポータルの「特典の設定」で決めた物 (r.gift = { label, qty })
+      const gift = r.gift ? '<div class="gift">🎁 ' + esc(r.gift.label) + 'を ' + esc(r.gift.qty) + '個 お渡しください</div>' : '';
       if (r.ok && r.alreadyArrived) { beep(false); vibrate(false); show('#d97706', '<div class="big">⚠ 既に到着済みです</div><div class="who">' + info + '</div>' + seat); addHist('wa', '既に到着', r); return; }
       if (r.ok) {
         beep(true); vibrate(true);
