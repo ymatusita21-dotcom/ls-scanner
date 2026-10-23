@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<!--
+  受付スキャナ (公演ポータルの当日受付用)
+  - カメラを開きっぱなしにして、お客様のQRを自動で連続読み取りし、公演ポータル (Google Apps Script) に入場処理を送る
+  - 公演ポータルの「入場管理 → QRスキャナ」から #api=...&id=...&k=... 付きで開く。設定はこの端末にだけ保存し、URLからは消す
+  - 予約データやキーはこのリポジトリには含めない (入場処理のたびに公演ポータルが受付スタッフのキーを確かめる)
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="受付スキャナ">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <title>受付スキャナ</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; color: #0f172a; }
+    .bar { color: #fff; padding: calc(env(safe-area-inset-top) + 8px) 12px 8px; display: flex; align-items: center; gap: 8px; }
+    .bar h1 { margin: 0; font-size: 14px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar select { max-width: 46vw; font-size: 12px; border-radius: 8px; padding: 4px; }
+    .bar .st { font-size: 11px; color: #86efac; white-space: nowrap; }
+    .bar .st.off { color: #fca5a5; }
+    .cam { position: relative; background: #000; width: 100%; height: 46vh; overflow: hidden; }
+    .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cam .frame { position: absolute; left: 50%; top: 50%; width: min(64vw, 38vh); height: min(64vw, 38vh); transform: translate(-50%, -50%); border: 3px solid rgba(255,255,255,.9); border-radius: 18px; box-shadow: 0 0 0 999px rgba(0,0,0,.28); pointer-events: none; transition: border-color .15s; }
+    .cam.hit .frame { border-color: #22c55e; }
+    .cam .msg { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; color: #fff; font-size: 13px; text-shadow: 0 1px 3px #000; }
+    .cam .over { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: #fff; padding: 16px; line-height: 1.7; font-size: 14px; }
+    .bigbtn { border: 0; border-radius: 16px; background: #16a34a; color: #fff; font-size: 21px; font-weight: 800; padding: 18px 24px; }
+    .torch { position: absolute; right: 10px; top: 10px; border: 0; border-radius: 999px; background: rgba(15,23,42,.6); color: #fff; font-size: 13px; padding: 7px 11px; display: none; }
+    .wrap { background: #f1f5f9; min-height: 54vh; padding: 10px 12px calc(env(safe-area-inset-bottom) + 20px); }
+    #res { border-radius: 16px; padding: 14px 16px; color: #fff; display: none; line-height: 1.5; margin-bottom: 10px; }
+    #res .big { font-size: 24px; font-weight: 800; }
+    #res .who { font-size: 18px; font-weight: 700; margin-top: 2px; }
+    #res .meta { font-size: 14px; opacity: .95; }
+    #res .seat { margin-top: 8px; padding: 6px 12px; border-radius: 10px; background: rgba(255,255,255,.2); font-size: 22px; font-weight: 800; }
+    #res .gift { margin-top: 8px; padding: 6px 12px; border-radius: 10px; background: #fef3c7; color: #92400e; font-size: 18px; font-weight: 800; }
+    #res button { margin-top: 10px; width: 100%; padding: 12px; border: 2px solid #fff; border-radius: 10px; background: transparent; color: #fff; font-size: 16px; font-weight: 700; }
+    .card { background: #fff; border-radius: 14px; padding: 10px 12px; margin-top: 10px; border: 1px solid #e2e8f0; }
+    .card h2 { margin: 0 0 6px; font-size: 13px; color: #475569; }
+    .row { display: flex; gap: 6px; }
+    .row input { flex: 1; font-size: 16px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 10px; text-transform: uppercase; min-width: 0; }
+    .row button { padding: 10px 14px; border: 0; border-radius: 10px; background: #0f172a; color: #fff; font-weight: 700; font-size: 14px; }
+    .hist div { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 5px 0; border-bottom: 1px dashed #e2e8f0; }
+    .hist .ok { color: #15803d; font-weight: 700; } .hist .ng { color: #b91c1c; font-weight: 700; } .hist .wa { color: #b45309; font-weight: 700; }
+    .note { background: #fff; border-radius: 16px; padding: 18px; margin: 16px; line-height: 1.8; font-size: 14px; }
+    .small { font-size: 11px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="bar"><h1 id="title">📷 受付スキャナ</h1><select id="perfSel" style="display:none;" onchange="switchPerf(this.value)"></select><span class="st" id="st"></span></div>
+  <div id="app"></div>
+  <script src="jsQR.min.js"></script>
+  <script>
+    'use strict';
+    const STORE = 'lsScanner.v1';
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    // ---------- 設定 (この端末に保存。URLの # は読んだら消す) ----------
+    function load() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) { return {}; } }
+    function save(c) { try { localStorage.setItem(STORE, JSON.stringify(c)); } catch (e) { } }
+    let cfg = load();
+    cfg.perfs = cfg.perfs || {};
+    (function readHash() {
+      const h = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+      const api = h.get('api'), id = h.get('id'), k = h.get('k');
+      if (api && id && k) {
+        cfg.perfs[id] = Object.assign(cfg.perfs[id] || {}, { api: api, k: k });
+        cfg.current = id;
+        save(cfg);
+        history.replaceState(null, '', location.pathname + location.search); // キーをアドレスバー・履歴に残さない
+      }
+    })();
+    const cur = () => cfg.perfs[cfg.current];
+
+    // ---------- 公演ポータルとのやり取り ----------
+    async function call(body, retried) {
+      const p = cur();
+      try {
+        const res = await fetch(p.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ action: 'staffScan', id: cfg.current, key: p.k }, body)) });
+        return await res.json();
+      } catch (e) {
+        if (!retried) { await new Promise((r) => setTimeout(r, 1000)); return call(body, true); } // 一瞬の通信エラーは1回だけやり直す
+        throw e;
+      }
+    }
+
+    // ---------- 画面 ----------
+    function noConfig() {
+      $('app').innerHTML = '<div class="note"><b>公演ポータルから開いてください</b><br>管理画面の「入場管理 → QRスキャナ」、または「📱 スタッフ端末の登録」に出ている受付スキャナのQRを、このスマホで読んで開きます。<br><span class="small">一度開くと、公演とキーはこの端末に保存されます。ホーム画面に追加するとアプリのように使えます。</span></div>';
+    }
+    function renderPerfSel() {
+      const ids = Object.keys(cfg.perfs);
+      const sel = $('perfSel');
+      if (ids.length < 2) { sel.style.display = 'none'; return; }
+      sel.style.display = '';
+      sel.innerHTML = ids.map((id) => '<option value="' + esc(id) + '"' + (id === cfg.current ? ' selected' : '') + '>' + esc(cfg.perfs[id].title || id.slice(0, 8)) + '</option>').join('');
+    }
+    function switchPerf(id) { cfg.current = id; save(cfg); location.reload(); }
+    function buildUi() {
+      $('app').innerHTML = '<div class="cam" id="cam"><video id="video" playsinline muted autoplay></video><div class="frame"></div><button class="torch" id="torch" onclick="toggleTorch()">🔦 ライト</button><div class="msg" id="msg"></div>'
+        + '<div class="over" id="over"><button class="bigbtn" onclick="startCam()">📷 カメラを起動</button></div></div>'
+        + '<div class="wrap"><div id="res"></div>'
+        + '<div class="card"><h2>QRが読めない時: 受付番号で入場</h2><div class="row"><input id="no" placeholder="例: G2610… / R2610…" autocomplete="off" onkeydown="if(event.key===\'Enter\')byNo()"><button onclick="byNo()">入場</button></div></div>'
+        + '<div class="card"><h2>この端末で受け付けた人</h2><div class="hist" id="hist"><div style="color:#94a3b8;">まだありません</div></div></div>'
+        + '<div class="small" style="margin-top:10px;">QRが読めない時は、明るい所で、QRが枠いっぱいになる距離にしてください。暗い時は右上の「ライト」。</div></div>';
+    }
+    function setSt(t, off) { const s = $('st'); s.textContent = t; s.className = 'st' + (off ? ' off' : ''); }
+    function setMsg(t) { const m = $('msg'); if (m) m.textContent = t; }
+
+    // ---------- カメラ ----------
+    const scan = { stream: null, track: null, timer: null, detector: null, busy: false, last: '', lastAt: 0, canvas: null, torch: false, wake: null };
+    async function startCam() {
+      const over = $('over');
+      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+        over.innerHTML = 'このブラウザではカメラを使えません。<br>Safari (iPhone) / Chrome (Android) で開いてください。<br>下の受付番号でも入場できます。';
+        return;
+      }
+      try {
+        scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+        scan.track = scan.stream.getVideoTracks()[0];
+        const v = $('video');
+        v.srcObject = scan.stream;
+        await v.play();
+        over.style.display = 'none';
+        try { const caps = scan.track.getCapabilities ? scan.track.getCapabilities() : {}; if (caps.torch) $('torch').style.display = 'block'; } catch (e) { }
+        if ('BarcodeDetector' in window) {
+          try { const f = await BarcodeDetector.getSupportedFormats(); if (f.indexOf('qr_code') >= 0) scan.detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { scan.detector = null; }
+        }
+        keepAwake();
+        setSt('● 読み取り中');
+        setMsg('QRを枠の中に入れてください');
+        clearInterval(scan.timer);
+        scan.timer = setInterval(tick, scan.detector ? 100 : 160);
+      } catch (e) {
+        over.style.display = '';
+        over.innerHTML = '<div>カメラを使えませんでした (' + esc(e && e.name || e) + ')<br>もう一度押して、カメラの使用を「許可」してください。<br><button class="bigbtn" style="margin-top:10px;" onclick="startCam()">📷 カメラを起動</button>'
+          + '<div class="small" style="color:#e2e8f0;margin-top:8px;">それでも出ない時: iPhone は「設定 → Safari → カメラ → 許可」、Android は Chrome の「︙ → 設定 → サイトの設定 → カメラ」でこのサイトを許可。</div></div>';
+      }
+    }
+    async function toggleTorch() {
+      try { scan.torch = !scan.torch; await scan.track.applyConstraints({ advanced: [{ torch: scan.torch }] }); $('torch').textContent = scan.torch ? '🔦 ライト消す' : '🔦 ライト'; } catch (e) { }
+    }
+    async function keepAwake() { try { if ('wakeLock' in navigator) scan.wake = await navigator.wakeLock.request('screen'); } catch (e) { } }
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      keepAwake();
+      const v = $('video');
+      if (v && scan.stream) {
+        if (scan.track && scan.track.readyState === 'ended') startCam(); else v.play().catch(() => { });
+      }
+    });
+    // 映像を毎秒数回調べ、QRが映ったら入場処理する (処理中は次を読まない・同じQRは4秒読まない)
+    async function tick() {
+      const v = $('video');
+      if (!v || scan.busy || v.readyState < 2 || document.hidden) return;
+      let text = '';
+      try {
+        if (scan.detector) {
+          const r = await scan.detector.detect(v);
+          if (r && r.length) text = r[0].rawValue || '';
+        } else if (window.jsQR) {
+          const vw = v.videoWidth, vh = v.videoHeight;
+          if (!vw || !vh) return;
+          const side = Math.min(vw, vh) * 0.85, sx = (vw - side) / 2, sy = (vh - side) / 2, S = 520;
+          const c = scan.canvas || (scan.canvas = document.createElement('canvas'));
+          c.width = S; c.height = S;
+          const ctx = c.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(v, sx, sy, side, side, 0, 0, S, S);
+          const code = jsQR(ctx.getImageData(0, 0, S, S).data, S, S, { inversionAttempts: 'dontInvert' });
+          if (code && code.data) text = code.data;
+        }
+      } catch (e) { return; }
+      if (!text) return;
+      const now = Date.now();
+      if (text === scan.last && now - scan.lastAt < 4000) return;
+      scan.last = text; scan.lastAt = now;
+      $('cam').classList.add('hit'); setTimeout(() => $('cam') && $('cam').classList.remove('hit'), 400);
+      handleRaw(text);
+    }
+
+    // ---------- 入場処理 ----------
+    function beep(ok) { try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = ok ? 1200 : 300; g.gain.value = 0.1; o.start(); o.stop(c.currentTime + 0.15); } catch (e) { } }
+    function vibrate(ok) { try { navigator.vibrate && navigator.vibrate(ok ? 80 : [60, 60, 60]); } catch (e) { } }
+    function show(bg, html) { const r = $('res'); r.style.display = 'block'; r.style.background = bg; r.innerHTML = html; }
+    const hist = [];
+    function addHist(cls, label, r) {
+      const d = new Date(), t = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+      hist.unshift('<div><span>' + t + ' ' + esc((r && r.name) || '') + (r && r.count ? ' ' + esc(r.count) + '枚' : '') + '</span><span class="' + cls + '">' + esc(label) + '</span></div>');
+      $('hist').innerHTML = hist.slice(0, 40).join('');
+    }
+    let lastSend = null;
+    async function send(kind, value, force) {
+      lastSend = { kind: kind, value: value };
+      scan.busy = true;
+      setMsg('入場処理中…');
+      show('#475569', '<div class="big">入場処理中…</div>');
+      const t0 = Date.now();
+      let r;
+      try {
+        r = await call(kind === 'no' ? { op: 'checkin', no: value, force: !!force } : { op: 'checkin', token: value, force: !!force });
+      } catch (e) {
+        scan.busy = false; scan.last = ''; setMsg('QRを枠の中に入れてください'); beep(false);
+        show('#dc2626', '<div class="big">⚠ 通信エラー</div><div class="meta">電波を確認して、もう一度読んでください。</div>');
+        return;
+      }
+      scan.busy = false; setMsg('QRを枠の中に入れてください');
+      render(r || {}, Date.now() - t0);
+    }
+    function render(r, ms) {
+      if (r.unauthorized) { setSt('キーが無効', true); show('#dc2626', '<div class="big">受付スタッフのキーが無効です</div><div class="meta">キーが作り直された可能性があります。公演ポータルの「入場管理 → QRスキャナ」から開き直してください。</div>'); return; }
+      const info = esc(r.name || '') + (r.name ? ' 様' : '') + '<div class="meta">' + esc((r.date || '') + ' ' + (r.time || '')) + ' / ' + esc(r.ticketType || '') + ' ' + esc(r.count || 0) + '枚' + (r.support ? ' / 推し ' + esc(r.support) : '') + '</div>';
+      const seat = r.seats ? '<div class="seat">座席 ' + esc(r.seats) + '</div>' : '';
+      const gift = /最前/.test(String(r.ticketType || '')) ? '<div class="gift">🎁 特典を ' + esc(r.count || 1) + '個 お渡しください</div>' : '';
+      if (r.ok && r.alreadyArrived) { beep(false); vibrate(false); show('#d97706', '<div class="big">⚠ 既に到着済みです</div><div class="who">' + info + '</div>' + seat); addHist('wa', '既に到着', r); return; }
+      if (r.ok) {
+        beep(true); vibrate(true);
+        show('#16a34a', '<div class="big">' + (r.testMode ? '🧪 テスト入場OK' : (r.forced ? '✅ 入場OK (強制)' : '✅ 入場OK')) + '</div><div class="who">' + info + '</div>' + seat + gift);
+        addHist('ok', r.forced ? '入場 (強制)' : '入場', r); return;
+      }
+      if (r.dateMismatch) {
+        beep(false); vibrate(false);
+        show('#dc2626', '<div class="big">🚫 この回のチケットではありません</div><div class="who">' + info + '</div><div class="meta" style="margin-top:6px;">' + esc(r.error || '') + '</div><button id="force">それでも入場させる (強制)</button>');
+        $('force').onclick = () => { if (confirm('日付・時間が違いますが入場させますか？')) send(lastSend.kind, lastSend.value, true); };
+        addHist('ng', '回が違う', r); return;
+      }
+      beep(false); vibrate(false);
+      show('#dc2626', '<div class="big">' + (r.cancelled ? '🚫 キャンセル済みの予約です' : '⚠ 入場できませんでした') + '</div><div class="meta">' + esc(r.error || '') + '</div>');
+      addHist('ng', r.cancelled ? 'キャンセル済' : '失敗', r);
+    }
+    function handleRaw(raw) {
+      raw = String(raw || '').trim();
+      const m = raw.match(/[?&]token=([^&#]+)/);
+      if (m) return send('token', decodeURIComponent(m[1]));
+      const n = raw.match(/[?&]no=([^&#]+)/);
+      if (n) return send('no', decodeURIComponent(n[1]));
+      send('token', raw); // 以前のゲネのQR (受付番号だけ) など
+    }
+    function byNo() { const v = ($('no').value || '').trim(); if (!v) return; $('no').value = ''; send('no', v); }
+
+    // ---------- 起動 ----------
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+    if (!cur()) { noConfig(); }
+    else {
+      renderPerfSel();
+      buildUi();
+      if (cur().title) $('title').textContent = '📷 ' + cur().title;
+      call({ op: 'ping' }).then((r) => {
+        if (r && r.ok) {
+          cur().title = r.title || cur().title; save(cfg); renderPerfSel();
+          if (r.title) $('title').textContent = '📷 ' + r.title;
+        } else if (r && r.unauthorized) { setSt('キーが無効', true); show('#dc2626', '<div class="big">受付スタッフのキーが無効です</div><div class="meta">公演ポータルの「入場管理 → QRスキャナ」から開き直してください。</div>'); }
+      }).catch(() => setSt('通信できません', true));
+      startCam();
+    }
+  </script>
+</body>
+</html>
