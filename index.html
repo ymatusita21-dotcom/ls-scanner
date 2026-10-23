@@ -18,7 +18,7 @@
   <title>受付スキャナ</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; color: #0f172a; }
+    html, body { margin: 0; overflow-x: hidden; max-width: 100%; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; color: #0f172a; }
     .bar { color: #fff; padding: calc(env(safe-area-inset-top) + 8px) 12px 8px; display: flex; align-items: center; gap: 8px; }
     .bar h1 { margin: 0; font-size: 14px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .bar select { max-width: 46vw; font-size: 12px; border-radius: 8px; padding: 4px; }
@@ -33,6 +33,7 @@
     .bigbtn { border: 0; border-radius: 16px; background: #16a34a; color: #fff; font-size: 21px; font-weight: 800; padding: 18px 24px; }
     .torch { position: absolute; right: 10px; top: 10px; border: 0; border-radius: 999px; background: rgba(15,23,42,.6); color: #fff; font-size: 13px; padding: 7px 11px; display: none; }
     .wrap { background: #f1f5f9; min-height: 54vh; padding: 10px 12px calc(env(safe-area-inset-bottom) + 20px); }
+    #res, .card { max-width: 100%; overflow-wrap: anywhere; }
     #res { border-radius: 16px; padding: 14px 16px; color: #fff; display: none; line-height: 1.5; margin-bottom: 10px; }
     #res .big { font-size: 24px; font-weight: 800; }
     #res .who { font-size: 18px; font-weight: 700; margin-top: 2px; }
