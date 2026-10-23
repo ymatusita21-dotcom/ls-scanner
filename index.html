@@ -134,7 +134,7 @@
           try { const f = await BarcodeDetector.getSupportedFormats(); if (f.indexOf('qr_code') >= 0) scan.detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { scan.detector = null; }
         }
         keepAwake();
-        setSt('● 読み取り中');
+        if (!/期限/.test($('st').textContent)) setSt('● 読み取り中');
         setMsg('QRを枠の中に入れてください');
         clearInterval(scan.timer);
         scan.timer = setInterval(tick, scan.detector ? 100 : 160);
@@ -214,7 +214,7 @@
       render(r || {}, Date.now() - t0);
     }
     function render(r, ms) {
-      if (r.unauthorized) { setSt('キーが無効', true); show('#dc2626', '<div class="big">受付スタッフのキーが無効です</div><div class="meta">キーが作り直された可能性があります。公演ポータルの「入場管理 → QRスキャナ」から開き直してください。</div>'); return; }
+      if (r.unauthorized) { setSt('使えません', true); show('#dc2626', '<div class="big">このスキャナは使えません</div><div class="meta">' + esc(r.error || 'キーが作り直された可能性があります。公演ポータルから開き直してください。') + '</div>'); return; }
       const info = esc(r.name || '') + (r.name ? ' 様' : '') + '<div class="meta">' + esc((r.date || '') + ' ' + (r.time || '')) + ' / ' + esc(r.ticketType || '') + ' ' + esc(r.count || 0) + '枚' + (r.support ? ' / 推し ' + esc(r.support) : '') + '</div>';
       const seat = r.seats ? '<div class="seat">座席 ' + esc(r.seats) + '</div>' : '';
       const gift = /最前/.test(String(r.ticketType || '')) ? '<div class="gift">🎁 特典を ' + esc(r.count || 1) + '個 お渡しください</div>' : '';
@@ -255,7 +255,9 @@
         if (r && r.ok) {
           cur().title = r.title || cur().title; save(cfg); renderPerfSel();
           if (r.title) $('title').textContent = '📷 ' + r.title;
-        } else if (r && r.unauthorized) { setSt('キーが無効', true); show('#dc2626', '<div class="big">受付スタッフのキーが無効です</div><div class="meta">公演ポータルの「入場管理 → QRスキャナ」から開き直してください。</div>'); }
+          // 外部スタッフ用リンクは期限を出す
+          if (r.guestUntil) { const d = new Date(r.guestUntil); setSt('期限 ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0')); }
+        } else if (r && r.unauthorized) { setSt('使えません', true); show('#dc2626', '<div class="big">このスキャナは使えません</div><div class="meta">' + esc(r.error || '公演ポータルから開き直してください。') + '</div>'); }
       }).catch(() => setSt('通信できません', true));
       startCam();
     }

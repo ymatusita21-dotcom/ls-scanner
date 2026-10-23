@@ -1,5 +1,5 @@
 // 受付スキャナ: 画面の部品を端末に保存して、すぐ開けるようにする (入場処理の通信は保存しない)
-const CACHE = 'ls-scanner-v3';
+const CACHE = 'ls-scanner-v4';
 const FILES = ['./', './index.html', './jsQR.min.js', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
