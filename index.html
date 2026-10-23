@@ -125,8 +125,9 @@
         scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
         scan.track = scan.stream.getVideoTracks()[0];
         const v = $('video');
+        v.onplaying = () => { over.style.display = 'none'; }; // 映像が流れ始めたらボタンを消す
         v.srcObject = scan.stream;
-        await v.play();
+        v.play().catch(() => { });
         over.style.display = 'none';
         try { const caps = scan.track.getCapabilities ? scan.track.getCapabilities() : {}; if (caps.torch) $('torch').style.display = 'block'; } catch (e) { }
         if ('BarcodeDetector' in window) {
