@@ -219,7 +219,7 @@
       const seat = r.seats ? '<div class="seat">座席 ' + esc(r.seats) + '</div>' : '';
       // 特典は公演ポータルの「特典の設定」で決めた物 (r.gift = { label, qty })
       const gift = r.gift ? '<div class="gift">🎁 ' + esc(r.gift.label) + 'を ' + esc(r.gift.qty) + '個 お渡しください</div>' : '';
-      if (r.ok && r.alreadyArrived) { beep(false); vibrate(false); show('#d97706', '<div class="big">⚠ 既に到着済みです</div><div class="who">' + info + '</div>' + seat); addHist('wa', '既に到着', r); return; }
+      if (r.ok && r.alreadyArrived) { beep(false); vibrate(false); show('#0284c7', '<div class="big">🔁 再入場です (入場済みのお客様)</div><div class="who">' + info + '</div>' + seat); addHist('wa', '再入場', r); return; }
       if (r.ok) {
         beep(true); vibrate(true);
         show('#16a34a', '<div class="big">' + (r.testMode ? '🧪 テスト入場OK' : (r.forced ? '✅ 入場OK (強制)' : '✅ 入場OK')) + '</div><div class="who">' + info + '</div>' + seat + gift);
